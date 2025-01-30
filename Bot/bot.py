@@ -11,6 +11,10 @@ load_dotenv()
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
+# Перевірка на наявність необхідних змінних середовища
+if not WEATHER_API_KEY or not TELEGRAM_TOKEN:
+    print("❌ Помилка: не знайдені змінні WEATHER_API_KEY або TELEGRAM_TOKEN")
+    exit(1)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обробник команди /start"""
@@ -55,6 +59,8 @@ async def get_weather(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     except requests.exceptions.RequestException:
         await update.message.reply_text("Помилка при отриманні даних про погоду. Спробуйте ще раз.")
+    except Exception as e:
+        await update.message.reply_text(f"Сталася непередбачена помилка: {e}")
 
 
 def main():
