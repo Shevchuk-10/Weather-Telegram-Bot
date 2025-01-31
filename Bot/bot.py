@@ -1,5 +1,6 @@
 import os
 import requests
+import logging
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -16,10 +17,13 @@ if not WEATHER_API_KEY or not TELEGRAM_TOKEN:
     print("❌ Помилка: не знайдені змінні WEATHER_API_KEY або TELEGRAM_TOKEN")
     exit(1)
 
+# Налаштування логування
+logging.basicConfig(format="%(asctime)s - %(message)s", level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обробник команди /start"""
     await update.message.reply_text("Привіт! Я бот погоди. Напишіть назву міста, щоб дізнатися погоду.")
-
 
 async def get_weather(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обробник текстових повідомлень (отримання погоди)"""
@@ -45,6 +49,7 @@ async def get_weather(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         feels_like = data["main"]["feels_like"]
         description = data["weather"][0]["description"]
         humidity = data["main"]["humidity"]
+        wind_speed = data["wind"]["speed"]
 
         # Формування повідомлення
         weather_message = (
@@ -52,15 +57,18 @@ async def get_weather(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             f"🌡 Температура: {temperature}°C\n"
             f"🤔 Відчувається як: {feels_like}°C\n"
             f"📜 Опис: {description.capitalize()}\n"
-            f"💧 Вологість: {humidity}%"
+            f"💧 Вологість: {humidity}%\n"
+            f"💨 Швидкість вітру: {wind_speed} м/с"
         )
 
         await update.message.reply_text(weather_message)
 
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as req_e:
         await update.message.reply_text("Помилка при отриманні даних про погоду. Спробуйте ще раз.")
-    except Exception as e:
-        await update.message.reply_text(f"Сталася непередбачена помилка: {e}")
+        logger.error(f"Error fetching weather data for {city}: {req_e}")
+    except Exception as ex:
+        await update.message.reply_text(f"Сталася непередбачена помилка: {ex}")
+        logger.error(f"Unexpected error: {ex}")
 
 
 def main():
@@ -71,9 +79,8 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_weather))
 
-    print("✅ Бот запущений...")
+    # Запуск бота
     application.run_polling()
-
 
 # Перевіряємо, чи цей файл запущений напряму
 if __name__ == "__main__":
