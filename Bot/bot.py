@@ -5,6 +5,17 @@ from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
+######               #####
+#     # #   #       #     # #    # ###### #    #  ####  #    # #    # #    #
+#     #  # #        #       #    # #      #    # #    # #    # #    # #   #
+######    #          #####  ###### #####  #    # #      ###### #    # ####
+#     #   #               # #    # #      #    # #      #    # #    # #  #
+#     #   #         #     # #    # #       #  #  #    # #    # #    # #   #
+######    #          #####  #    # ######   ##    ####  #    #  ####  #    #
+
+
+
+
 # Завантажуємо змінні з .env
 load_dotenv()
 
