@@ -1,4 +1,4 @@
-#!/home/lux/PycharmProjects/Weather-Telegram-Bot/.venv/bin/python3
+#!/home/lux/PycharmProjects/Weather-Telegram-Bot/.venv/bin/python
 # -*- coding: utf-8 -*-
 import re
 import sys
