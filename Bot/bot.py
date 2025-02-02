@@ -109,4 +109,5 @@ def run_telegram_bot():
 # Точка входу для запуску бота
 if __name__ == "__main__":
     run_telegram_bot()
-#coment
+#coments
+
