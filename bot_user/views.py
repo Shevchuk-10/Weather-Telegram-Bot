@@ -4,7 +4,6 @@ from bot_user.serializers import UserInfoSerializer
 
 
 
-
 # Create your views here.
 class UserInfo(APIView):
     def post(self,request):

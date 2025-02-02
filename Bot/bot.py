@@ -60,7 +60,6 @@ async def get_weather_by_location(update: Update, context: ContextTypes.DEFAULT_
 
     try:
         data = await fetch_weather_data(url)
-
         if data.get("cod") != 200:
             await update.message.reply_text("Не удалось найти погоду для этой локации.")
             return
