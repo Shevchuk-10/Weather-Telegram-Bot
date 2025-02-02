@@ -1,9 +1,10 @@
+import os
 import logging
 import aiohttp
+import requests
 from dotenv import load_dotenv
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import os
 
 # Завантажуємо змінні середовища з .env файлу
 load_dotenv()
@@ -16,6 +17,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 logging.basicConfig(format="%(asctime)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 # Функція для отримання даних про погоду
 async def fetch_weather_data(url: str) -> dict:
     """Получение данных о погоде"""
@@ -23,9 +25,18 @@ async def fetch_weather_data(url: str) -> dict:
         async with session.get(url) as response:
             return await response.json()
 
+
 # Обробник команди /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик команды /start"""
+    print({'user_id': update.message.chat_id,
+                                 'name': f'{update.message.chat.first_name} {update.message.chat.last_name}'
+                             })
+    responce = requests.post('http://127.0.0.1:8000/user_management/user_info/',
+                             json= {
+                                 'user_id': update.message.chat_id,
+                                 'name': f'{update.message.chat.first_name} {update.message.chat.last_name}'
+                             })
     keyboard = [
         [KeyboardButton("Отправить свою геолокацию", request_location=True)],
     ]
