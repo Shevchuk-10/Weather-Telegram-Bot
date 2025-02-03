@@ -2,9 +2,11 @@ import os
 import logging
 import aiohttp
 import requests
+from telegram.ext import CallbackQueryHandler
 from dotenv import load_dotenv
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+
 
 # Завантажуємо змінні середовища з .env файлу
 load_dotenv()
@@ -29,11 +31,8 @@ async def fetch_weather_data(url: str) -> dict:
 # Обробник команди /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик команды /start"""
-    print({'user_id': update.message.chat_id,
-                                 'name': f'{update.message.chat.first_name} {update.message.chat.last_name}'
-                             })
     responce = requests.post('http://127.0.0.1:8000/user_management/user_info/',
-                             json= {
+                             json={
                                  'user_id': update.message.chat_id,
                                  'name': f'{update.message.chat.first_name} {update.message.chat.last_name}'
                              })
@@ -46,7 +45,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         reply_markup=reply_markup
     )
 
+
 # Обробник отримання погоди за геолокацією
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
 async def get_weather_by_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Получение погоды по геолокации пользователя"""
     location = update.message.location
@@ -80,7 +82,11 @@ async def get_weather_by_location(update: Update, context: ContextTypes.DEFAULT_
             f"💨 Скорость ветра: {wind_speed} м/с"
         )
 
-        await update.message.reply_text(weather_message)
+        # Кнопка "Підписатися"
+        keyboard = [[InlineKeyboardButton("🔔 Подписаться", callback_data=f"subscribe_{lat}_{lon}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await update.message.reply_text(weather_message, reply_markup=reply_markup)
 
     except aiohttp.ClientError as req_e:
         await update.message.reply_text("Ошибка при получении данных о погоде. Попробуйте еще раз.")
@@ -88,6 +94,30 @@ async def get_weather_by_location(update: Update, context: ContextTypes.DEFAULT_
     except Exception as ex:
         await update.message.reply_text(f"Произошла непредвиденная ошибка: {ex}")
         logger.error(f"Неожиданная ошибка: {ex}")
+
+from telegram.ext import CallbackQueryHandler
+
+async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обработчик подписки на уведомления о погоде"""
+    query = update.callback_query
+    await query.answer()
+
+    # Получаем координаты из callback_data
+    _, lat, lon = query.data.split("_")
+    user_id = query.message.chat_id
+
+    # Отправляем данные в бэкенд (тут тебе нужно сделать API для подписки)
+    response = requests.post("http://127.0.0.1:8000/weather/subscribe/", json={
+        "user_id": user_id,
+        "latitude": lat,
+        "longitude": lon
+    })
+
+    if response.status_code == 200:
+        await query.edit_message_text("✅ Вы подписались на уведомления о погоде!")
+    else:
+        await query.edit_message_text("❌ Ошибка при подписке. Попробуйте позже.")
+
 
 # Функція для запуску бота
 def run_telegram_bot():
@@ -106,8 +136,8 @@ def run_telegram_bot():
     logger.info("Бот запущен...")
     application.run_polling()
 
+
 # Точка входу для запуску бота
 if __name__ == "__main__":
     run_telegram_bot()
-#coments
-
+# coments
