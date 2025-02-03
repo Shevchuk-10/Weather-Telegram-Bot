@@ -6,7 +6,7 @@ from telegram.ext import CallbackQueryHandler
 from dotenv import load_dotenv
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 # Завантажуємо змінні середовища з .env файлу
 load_dotenv()
@@ -38,6 +38,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                              })
     keyboard = [
         [KeyboardButton("Отправить свою геолокацию", request_location=True)],
+        [KeyboardButton("Написать место вручную")],
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True)
     await update.message.reply_text(
@@ -46,9 +47,55 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
-# Обробник отримання погоди за геолокацією
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+# Обробник введення міста вручну
+async def get_weather_by_city(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Получение погоды по введенному городу"""
+    city_name = update.message.text.strip()
 
+    if not city_name:
+        await update.message.reply_text('Пожалуйста, введите название города.')
+        return
+
+    url = f"http://api.openweathermap.org/data/2.5/weather?q={city_name}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
+
+    try:
+        data = await fetch_weather_data(url)
+        if data.get('cod') != 200:
+            await update.message.reply_text(
+                'Напишите место чтобы узнать погоду.')
+            return
+
+        city_name = data.get("name", "неизвестное место")
+        temperature = data["main"]["temp"]
+        feels_like = data["main"]["feels_like"]
+        description = data["weather"][0]["description"]
+        humidity = data["main"]["humidity"]
+        wind_speed = data["wind"]["speed"]
+
+        weather_message = (
+            f"🌍 Погода в {city_name}:\n"
+            f"🌡 Температура: {temperature}°C\n"
+            f"🤔 Ощущается как: {feels_like}°C\n"
+            f"📜 Описание: {description.capitalize()}\n"
+            f"💧 Влажность: {humidity}%\n"
+            f"💨 Скорость ветра: {wind_speed} м/с"
+        )
+
+        # Кнопка "Подписаться"
+        keyboard = [[InlineKeyboardButton("🔔 Подписаться", callback_data=f"subscribe_{city_name}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await update.message.reply_text(weather_message, reply_markup=reply_markup)
+
+    except aiohttp.ClientError as req_e:
+        await update.message.reply_text("Ошибка при получении данных о погоде. Попробуйте еще раз.")
+        logger.error(f"Ошибка запроса погоды для города {city_name}: {req_e}")
+    except Exception as ex:
+        await update.message.reply_text(f"Произошла непредвиденная ошибка: {ex}")
+        logger.error(f"Неожиданная ошибка: {ex}")
+
+
+# Обробник отримання погоди за геолокацією
 async def get_weather_by_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Получение погоды по геолокации пользователя"""
     location = update.message.location
@@ -82,7 +129,7 @@ async def get_weather_by_location(update: Update, context: ContextTypes.DEFAULT_
             f"💨 Скорость ветра: {wind_speed} м/с"
         )
 
-        # Кнопка "Підписатися"
+        # Кнопка "Подписаться"
         keyboard = [[InlineKeyboardButton("🔔 Подписаться", callback_data=f"subscribe_{lat}_{lon}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -95,8 +142,8 @@ async def get_weather_by_location(update: Update, context: ContextTypes.DEFAULT_
         await update.message.reply_text(f"Произошла непредвиденная ошибка: {ex}")
         logger.error(f"Неожиданная ошибка: {ex}")
 
-from telegram.ext import CallbackQueryHandler
 
+# Обробник підписки на сповіщення про погоду
 async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик подписки на уведомления о погоде"""
     query = update.callback_query
@@ -132,6 +179,7 @@ def run_telegram_bot():
     # Додаємо обробники команд та повідомлень
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.LOCATION, get_weather_by_location))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_weather_by_city))
 
     logger.info("Бот запущен...")
     application.run_polling()
@@ -140,4 +188,3 @@ def run_telegram_bot():
 # Точка входу для запуску бота
 if __name__ == "__main__":
     run_telegram_bot()
-# coments
