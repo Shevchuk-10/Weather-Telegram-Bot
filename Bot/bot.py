@@ -8,6 +8,8 @@ from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+
+
 # Завантажуємо змінні середовища з .env файлу
 load_dotenv()
 
