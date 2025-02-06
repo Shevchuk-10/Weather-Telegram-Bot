@@ -1,192 +1,142 @@
 import os
+import json
 import logging
 import aiohttp
-import requests
-from telegram.ext import CallbackQueryHandler
+import asyncio
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from dotenv import load_dotenv
-from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
 
-# Завантажуємо змінні середовища з .env файлу
+# Загружаем переменные окружения
 load_dotenv()
 
-# Отримуємо ключ API та токен Telegram
+# Переменные окружения
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+DJANGO_API_URL = "http://127.0.0.1:8000/api/subscribe/"
 
-# Налаштовуємо логування
+# Настройка логирования
 logging.basicConfig(format="%(asctime)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-# Функція для отримання даних про погоду
 async def fetch_weather_data(url: str) -> dict:
-    """Получение данных о погоде"""
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            return await response.json()
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                response.raise_for_status()
+                return await response.json()
+    except Exception as e:
+        logger.error(f"Ошибка при запросе данных о погоде: {e}")
+        return {}
 
 
-# Обробник команди /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обработчик команды /start"""
-    responce = requests.post('http://127.0.0.1:8000/user_management/user_info/',
-                             json={
-                                 'user_id': update.message.chat_id,
-                                 'name': f'{update.message.chat.first_name} {update.message.chat.last_name}'
-                             })
     keyboard = [
-        [KeyboardButton("Отправить свою геолокацию", request_location=True)],
-        [KeyboardButton("Написать место вручную")],
+        [KeyboardButton("📍 Отправить геолокацию", request_location=True)],
+        [KeyboardButton("✍ Ввести город вручную")],
     ]
-    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True)
-    await update.message.reply_text(
-        "Привет! Я бот погоды. Выберите, как хотите получить погоду:",
-        reply_markup=reply_markup
-    )
+    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+    await update.message.reply_text("Привет! Я бот погоды. Выберите, как хотите получить погоду:",
+                                    reply_markup=reply_markup)
 
 
-# Обробник введення міста вручну
+async def get_weather_by_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_location = update.message.location
+    latitude = user_location.latitude
+    longitude = user_location.longitude
+    user_id = update.message.chat_id
+
+    url = f"http://api.openweathermap.org/data/2.5/weather?lat={latitude}&lon={longitude}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
+    data = await fetch_weather_data(url)
+
+    if not data or data.get("cod") != 200:
+        await update.message.reply_text("❌ Не удалось получить погоду для вашей геолокации. Попробуйте снова.")
+        return
+
+    weather_message = format_weather_message(data)
+
+    keyboard = [[InlineKeyboardButton("🔔 Подписаться на уведомления",
+                                      callback_data=f"subscribe_location_{latitude}_{longitude}")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(weather_message, reply_markup=reply_markup)
+
+
 async def get_weather_by_city(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Получение погоды по введенному городу"""
     city_name = update.message.text.strip()
-
-    if not city_name:
-        await update.message.reply_text('Пожалуйста, введите название города.')
+    if city_name.lower() in ["ввести город вручную", "✍ ввести город вручную"]:
+        await update.message.reply_text("✍ Пожалуйста, введите название города вручную:")
         return
 
     url = f"http://api.openweathermap.org/data/2.5/weather?q={city_name}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
+    data = await fetch_weather_data(url)
 
-    try:
-        data = await fetch_weather_data(url)
-        if data.get('cod') != 200:
-            await update.message.reply_text(
-                'Напишите место чтобы узнать погоду.')
-            return
-
-        city_name = data.get("name", "неизвестное место")
-        temperature = data["main"]["temp"]
-        feels_like = data["main"]["feels_like"]
-        description = data["weather"][0]["description"]
-        humidity = data["main"]["humidity"]
-        wind_speed = data["wind"]["speed"]
-
-        weather_message = (
-            f"🌍 Погода в {city_name}:\n"
-            f"🌡 Температура: {temperature}°C\n"
-            f"🤔 Ощущается как: {feels_like}°C\n"
-            f"📜 Описание: {description.capitalize()}\n"
-            f"💧 Влажность: {humidity}%\n"
-            f"💨 Скорость ветра: {wind_speed} м/с"
-        )
-
-        # Кнопка "Подписаться"
-        keyboard = [[InlineKeyboardButton("🔔 Подписаться", callback_data=f"subscribe_{city_name}")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        await update.message.reply_text(weather_message, reply_markup=reply_markup)
-
-    except aiohttp.ClientError as req_e:
-        await update.message.reply_text("Ошибка при получении данных о погоде. Попробуйте еще раз.")
-        logger.error(f"Ошибка запроса погоды для города {city_name}: {req_e}")
-    except Exception as ex:
-        await update.message.reply_text(f"Произошла непредвиденная ошибка: {ex}")
-        logger.error(f"Неожиданная ошибка: {ex}")
-
-
-# Обробник отримання погоди за геолокацією
-async def get_weather_by_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Получение погоды по геолокации пользователя"""
-    location = update.message.location
-
-    if not location:
-        await update.message.reply_text("Не удалось получить вашу геолокацию.")
+    if not data or data.get("cod") != 200:
+        await update.message.reply_text("❌ Не удалось найти погоду для указанного города. Попробуйте снова.")
         return
 
-    lat, lon = location.latitude, location.longitude
-    url = f"http://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
+    weather_message = format_weather_message(data)
+    keyboard = [[InlineKeyboardButton("🔔 Подписаться на уведомления", callback_data=f"subscribe_city_{city_name}")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
-    try:
-        data = await fetch_weather_data(url)
-        if data.get("cod") != 200:
-            await update.message.reply_text("Не удалось найти погоду для этой локации.")
-            return
-
-        city_name = data.get("name", "неизвестное место")
-        temperature = data["main"]["temp"]
-        feels_like = data["main"]["feels_like"]
-        description = data["weather"][0]["description"]
-        humidity = data["main"]["humidity"]
-        wind_speed = data["wind"]["speed"]
-
-        weather_message = (
-            f"🌍 Погода в {city_name}:\n"
-            f"🌡 Температура: {temperature}°C\n"
-            f"🤔 Ощущается как: {feels_like}°C\n"
-            f"📜 Описание: {description.capitalize()}\n"
-            f"💧 Влажность: {humidity}%\n"
-            f"💨 Скорость ветра: {wind_speed} м/с"
-        )
-
-        # Кнопка "Подписаться"
-        keyboard = [[InlineKeyboardButton("🔔 Подписаться", callback_data=f"subscribe_{lat}_{lon}")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        await update.message.reply_text(weather_message, reply_markup=reply_markup)
-
-    except aiohttp.ClientError as req_e:
-        await update.message.reply_text("Ошибка при получении данных о погоде. Попробуйте еще раз.")
-        logger.error(f"Ошибка запроса погоды {lat}, {lon}: {req_e}")
-    except Exception as ex:
-        await update.message.reply_text(f"Произошла непредвиденная ошибка: {ex}")
-        logger.error(f"Неожиданная ошибка: {ex}")
+    await update.message.reply_text(weather_message, reply_markup=reply_markup)
 
 
-# Обробник підписки на сповіщення про погоду
 async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обработчик подписки на уведомления о погоде"""
     query = update.callback_query
     await query.answer()
 
-    # Получаем координаты из callback_data
-    _, lat, lon = query.data.split("_")
-    user_id = query.message.chat_id
+    data = query.data.split("_")
+    user_id = query.message.chat.id
 
-    # Отправляем данные в бэкенд (тут тебе нужно сделать API для подписки)
-    response = requests.post("http://127.0.0.1:8000/weather/subscribe/", json={
-        "user_id": user_id,
-        "latitude": lat,
-        "longitude": lon
-    })
-
-    if response.status_code == 200:
-        await query.edit_message_text("✅ Вы подписались на уведомления о погоде!")
+    if data[1] == "city":
+        city_name = "_".join(data[2:])
+        payload = {"user_id": user_id, "city": city_name}
     else:
+        latitude, longitude = data[2], data[3]
+        payload = {"user_id": user_id, "latitude": latitude, "longitude": longitude}
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(DJANGO_API_URL, json=payload) as response:
+                response.raise_for_status()
+        await query.edit_message_text("✅ Вы подписались на уведомление о погоде!")
+    except Exception as e:
         await query.edit_message_text("❌ Ошибка при подписке. Попробуйте позже.")
+        logger.error(f"Ошибка при подписке: {e}")
 
 
-# Функція для запуску бота
+def format_weather_message(data: dict) -> str:
+    city_name = data.get("name", "Неизвестное место")
+    temperature = data["main"]["temp"]
+    feels_like = data["main"]["feels_like"]
+    description = data["weather"][0]["description"]
+    humidity = data["main"]["humidity"]
+    wind_speed = data["wind"]["speed"]
+
+    return (
+        f"🌍 Погода в {city_name}:\n"
+        f"🌡 Температура: {temperature}°C\n"
+        f"🤔 Ощущается как: {feels_like}°C\n"
+        f"📜 Описание: {description.capitalize()}\n"
+        f"💧 Влажность: {humidity}%\n"
+        f"💨 Скорость ветра: {wind_speed} м/с"
+    )
+
+
 def run_telegram_bot():
-    """Запуск Telegram-бота"""
-    if not TELEGRAM_TOKEN:
-        logger.error("TELEGRAM_TOKEN не найден. Проверьте .env файл!")
-        return
+    app = Application.builder().token(TELEGRAM_TOKEN).build()
 
-    # Ініціалізуємо додаток для бота
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
-
-    # Додаємо обробники команд та повідомлень
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.LOCATION, get_weather_by_location))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_weather_by_city))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.LOCATION, get_weather_by_location))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_weather_by_city))
+    app.add_handler(CallbackQueryHandler(subscribe))
 
     logger.info("Бот запущен...")
-    application.run_polling()
+    app.run_polling()
 
 
-# Точка входу для запуску бота
 if __name__ == "__main__":
     run_telegram_bot()

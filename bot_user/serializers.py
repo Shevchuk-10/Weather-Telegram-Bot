@@ -1,9 +1,14 @@
 from rest_framework import serializers
+from .models import BotUser, Subscription
 
-from bot_user.models import BotUser
+class SubscriptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Subscription
+        fields = ['id', 'user', 'latitude', 'longitude', 'subscribed_at']
 
+class BotUserSerializer(serializers.ModelSerializer):
+    subscriptions = SubscriptionSerializer(many=True, read_only=True)  # Додаємо підписки користувача
 
-class UserInfoSerializer(serializers.ModelSerializer):
     class Meta:
         model = BotUser
-        fields = ['user_id','name']
+        fields = ['id', 'user_id', 'name', 'date_at', 'subscriptions']
