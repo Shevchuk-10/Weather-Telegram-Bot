@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 
 
+
 # Загружаем переменные окружения
 load_dotenv()
 
