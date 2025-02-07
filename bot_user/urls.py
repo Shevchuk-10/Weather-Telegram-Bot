@@ -15,14 +15,13 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.urls import path
-from . import views
-
+from bot_user.views import subscribe, get_subscribers
 
 urlpatterns = [
-    path('api/subscribe/', views.subscribe, name='subscribe'),
-    path('api/get_subscribers/', views.get_subscribers, name='get_subscribers'),
-    path('api/send_weather_update/', views.send_weather_update, name='send_weather_update'),
+    path('api/subscribe/', subscribe, name='subscribe'),
+    path('api/get_subscribers/', get_subscribers, name='get_subscribers'),  # Додано маршрут для отримання підписників
 ]
+
 
 
 
