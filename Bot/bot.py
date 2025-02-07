@@ -9,7 +9,8 @@ from dotenv import load_dotenv
 
 
 
-# Загружаем переменные окружения
+# Загружаем переменны
+# е окружения
 load_dotenv()
 
 # Переменные окружения
@@ -31,16 +32,33 @@ async def fetch_weather_data(url: str) -> dict:
         logger.error(f"Ошибка при запросе данных о погоде: {e}")
         return {}
 
+async def is_user_subscribed(user_id: int, latitude: float = None, longitude: float = None) -> bool:
+    """ Проверяет, подписан ли пользователь в Django API """
+    try:
+        payload = {"user_id": user_id}
+        if latitude and longitude:
+            payload["latitude"] = latitude
+            payload["longitude"] = longitude
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(DJANGO_API_URL, json=payload) as response:
+                response.raise_for_status()
+                data = await response.json()
+
+                # Проверяем, есть ли подписка для пользователя
+                if data.get("is_subscribed", False):
+                    return True
+    except Exception as e:
+        logger.error(f"Ошибка при проверке подписки: {e}")
+    return False
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     keyboard = [
         [KeyboardButton("📍 Отправить геолокацию", request_location=True)],
-        [KeyboardButton("✍ Ввести город вручную")],
     ]
-    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
-    await update.message.reply_text("Привет! Я бот погоды. Выберите, как хотите получить погоду:",
+    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=False, resize_keyboard=True)
+    await update.message.reply_text("Привет! Я бот погоды. Отправьте свою локацию, чтобы узнать прогноз погоды 😊🌤️:",
                                     reply_markup=reply_markup)
-
 
 async def get_weather_by_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_location = update.message.location
@@ -52,37 +70,21 @@ async def get_weather_by_location(update: Update, context: ContextTypes.DEFAULT_
     data = await fetch_weather_data(url)
 
     if not data or data.get("cod") != 200:
-        await update.message.reply_text("❌ Не удалось получить погоду для вашей геолокации. Попробуйте снова.")
+        await update.message.reply_text("❌ Не удалось получить погоду для вашей геолокации🫤. Попробуйте снова.")
         return
 
     weather_message = format_weather_message(data)
 
-    keyboard = [[InlineKeyboardButton("🔔 Подписаться на уведомления",
-                                      callback_data=f"subscribe_location_{latitude}_{longitude}")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    # Проверяем подписку
+    is_subscribed = await is_user_subscribed(user_id, latitude=latitude, longitude=longitude)
 
-    await update.message.reply_text(weather_message, reply_markup=reply_markup)
-
-
-async def get_weather_by_city(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    city_name = update.message.text.strip()
-    if city_name.lower() in ["ввести город вручную", "✍ ввести город вручную"]:
-        await update.message.reply_text("✍ Пожалуйста, введите название города вручную:")
-        return
-
-    url = f"http://api.openweathermap.org/data/2.5/weather?q={city_name}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
-    data = await fetch_weather_data(url)
-
-    if not data or data.get("cod") != 200:
-        await update.message.reply_text("❌ Не удалось найти погоду для указанного города. Попробуйте снова.")
-        return
-
-    weather_message = format_weather_message(data)
-    keyboard = [[InlineKeyboardButton("🔔 Подписаться на уведомления", callback_data=f"subscribe_city_{city_name}")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.message.reply_text(weather_message, reply_markup=reply_markup)
-
+    if not is_subscribed:
+        keyboard = [[InlineKeyboardButton("🔔 Подписаться на уведомления",
+                                          callback_data=f"subscribe_location_{latitude}_{longitude}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(weather_message, reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(weather_message)
 
 async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
@@ -91,25 +93,32 @@ async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     data = query.data.split("_")
     user_id = query.message.chat.id
 
-    if data[1] == "city":
-        city_name = "_".join(data[2:])
-        payload = {"user_id": user_id, "city": city_name}
-    else:
-        latitude, longitude = data[2], data[3]
-        payload = {"user_id": user_id, "latitude": latitude, "longitude": longitude}
+    # Підписка за координатами
+    if data[1] == "location":
+        try:
+            latitude = float(data[2])
+            longitude = float(data[3])
+            payload = {"user_id": user_id, "latitude": latitude, "longitude": longitude}
+        except ValueError:
+            await query.message.reply_text("❌ Невозможно получить корректные координаты.")
+            return
+
+    # Логування для перевірки, які дані ми відправляємо
+    logger.info(f"Відправлені дані на сервер: {payload}")
 
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(DJANGO_API_URL, json=payload) as response:
                 response.raise_for_status()
-        await query.edit_message_text("✅ Вы подписались на уведомление о погоде!")
-    except Exception as e:
-        await query.edit_message_text("❌ Ошибка при подписке. Попробуйте позже.")
-        logger.error(f"Ошибка при подписке: {e}")
 
+        # Повідомлення про успішну підписку
+        await query.message.reply_text('Отлично😊\nВы подписались на уведомление о погоде✅\nИ теперь я буду оповещать о возможном дожде,за 20 минут до его начала😊')
+    except Exception as e:
+        await query.message.reply_text("❌ Ошибка при подписке. Попробуйте позже🫤.")
+        logger.error(f"Ошибка при подписке🫤: {e}")
 
 def format_weather_message(data: dict) -> str:
-    city_name = data.get("name", "Неизвестное место")
+    city_name = data.get("name", "Неизвестное место🫤")
     temperature = data["main"]["temp"]
     feels_like = data["main"]["feels_like"]
     description = data["weather"][0]["description"]
@@ -125,18 +134,15 @@ def format_weather_message(data: dict) -> str:
         f"💨 Скорость ветра: {wind_speed} м/с"
     )
 
-
 def run_telegram_bot():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.LOCATION, get_weather_by_location))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_weather_by_city))
     app.add_handler(CallbackQueryHandler(subscribe))
 
     logger.info("Бот запущен...")
     app.run_polling()
-
 
 if __name__ == "__main__":
     run_telegram_bot()

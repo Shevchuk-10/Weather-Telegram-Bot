@@ -22,6 +22,7 @@ from bot_user.views import get_subscribers
 
 
 
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('bot_user.urls')),
